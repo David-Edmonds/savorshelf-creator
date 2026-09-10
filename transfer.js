@@ -30,7 +30,8 @@ function migrate(state,seeds,baselines,revision=3){
 }
 function cleanString(x,max,def=''){if(x===undefined||x===null)return def;if(typeof x!=='string'||x.length>max)throw Error('Recipe text is too long or has the wrong type.');return x.trim();}
 function ingredientLine(line,index=0){
- let text=line.trim().replace(/^[-*•]\s*/,'');let amount=null,unit='';
+ let text=line.trim().replace(/^[-*•]\s*/,'').replace(/\*\*|__/g,'');let amount=null,unit='';
+ if(/^\d+(?:\.\d+)?\s*(?:[-–]|to)\s*\d/.test(text))return {key:'item-'+index,amount:null,unit:'',name:text,substitution:''};
  const match=text.match(/^((?:\d+\s+)?\d+\/\d+|\d+(?:\.\d+)?(?:\s*[½¼¾⅓⅔⅛⅜⅝⅞⅙⅚])?|[½¼¾⅓⅔⅛⅜⅝⅞⅙⅚])\s*/);
  if(match){amount=C.quantity(match[1]);text=text.slice(match[0].length);}
  const m=text.match(/^(cups?|tablespoons?|tbsp|teaspoons?|tsp|kilograms?|kg|grams?|g|millilit(?:er|re)s?|ml|lit(?:er|re)s?|l|ounces?|oz|pounds?|lb|cloves?|cans?)\b\.?\s*/i);
@@ -40,17 +41,50 @@ function ingredientLine(line,index=0){
  return {key:'item-'+index,amount,unit,name:text.trim(),substitution};
 }
 function linkAmounts(r){
- const escaped=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+ const escape=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+ // Compile once per recipe, rather than sorting and compiling for every instruction.
+ const matchers=[...r.ingredients].filter(i=>i.amount!==null).sort((a,b)=>b.name.length-a.name.length).flatMap(i=>{
+  const forms=new Set([K.ingredientText(i),[String(i.amount),i.unit,i.name].filter(Boolean).join(' ')]);
+  return [...forms].map(text=>({key:i.key,pattern:new RegExp('(^|[^a-z0-9])('+escape(text).replace(/\s+/g,'\\s+')+')(?![a-z0-9])','gi')}));
+ });
  r.steps=r.steps.map(step=>{
-  // Only exact quantity+unit+ingredient phrases are auto-linked. No guessing from pronouns.
-  const held=[];let s=step.replace(/\{\{[^}]+\}\}/g,m=>{held.push(m);return '\uE002'+(held.length-1)+'\uE003';});
-  for(const i of [...r.ingredients].sort((a,b)=>b.name.length-a.name.length)){
-   if(i.amount===null)continue;
-   const forms=new Set([K.ingredientText(i),[String(i.amount),i.unit,i.name].filter(Boolean).join(' ')]);
-   for(const f of forms){const p=escaped(f).replace(/\s+/g,'\\s+');s=s.replace(new RegExp('(^|[^a-z0-9])('+p+')(?![a-z0-9])','gi'),(_m,b)=>b+'{{'+i.key+'}}');}
+  const held=[];
+  const hold=token=>{held.push(token);return '\uE002'+(held.length-1)+'\uE003';};
+  let text=step.replace(/\{\{[^}]+\}\}/g,hold);
+  for(const {key,pattern} of matchers)text=text.replace(pattern,(_match,prefix)=>prefix+hold('{{'+key+'}}'));
+  return text.replace(/\uE002(\d+)\uE003/g,(_,index)=>held[index]);
+ });
+ return addNamedAmounts(r);
+}
+function addNamedAmounts(r){
+ const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+ const aliases=i=>[...new Set([i.name.toLowerCase(),i.name.toLowerCase().split(',')[0].replace(/\([^)]*\)/g,'').replace(/\b(?:fresh|dried|finely|roughly|chopped|diced|sliced|grated|sifted|melted|softened|unsalted|boneless|skinless)\b/g,'').replace(/\s+/g,' ').trim()])].filter(Boolean);
+ const linked=new Set(r.steps.flatMap(step=>[...step.matchAll(/\{\{([\w-]+)(?:\|[\d.]+)?\}\}/g)].map(match=>match[1])));
+ const names=r.ingredients.map(i=>({i,names:aliases(i)}));
+ // Process longer names first. Hold linked tokens so their keys can never be mistaken for prose.
+ for(const {i,names:ns} of names.sort((a,b)=>b.i.name.length-a.i.name.length)){
+  if(i.amount===null||i.amount===0||linked.has(i.key))continue;
+  const usable=ns.filter(n=>!names.some(x=>x.i!==i&&x.names.some(other=>other===n||other.endsWith(' '+n)))).sort((a,b)=>b.length-a.length);
+  if(!usable.length)continue;
+  const re=new RegExp('\\b(?:'+usable.map(esc).join('|')+')\\b','gi');const hits=[];
+  r.steps.forEach((step,si)=>{
+   const masked=step.replace(/\{\{[^}]+\}\}/g,m=>' '.repeat(m.length));
+   for(const m of masked.matchAll(re)){
+    const before=masked.slice(0,m.index),sentence=before.split(/[.!?;]/).pop();
+    const half=sentence.match(/(?:the\s+)?(?:other\s+)?half(?:\s+of)?(?:\s+the)?\s*$/i);
+    const blocked=/\b(?:remaining|reserved|divided|some|rest|little|more|extra|part|third|quarter|avoid|optional|do not|don't)\b|\d|[½¼¾⅓⅔]/i.test(sentence);
+    const action=/\b(?:add|pour|stir|mix|whisk|fold|combine|melt|heat|sprinkle|place|put|toss|beat|cream|season|coat)\b/i.test(sentence);
+    if(action)hits.push({si,start:half?m.index-half[0].length:m.index,end:m.index+m[0].length,half:!!half,blocked:blocked&&!half});
+   }
+  });
+  // Multiple additions need explicit halves, otherwise preserve the source rather than doubling it.
+  if(!hits.length||hits.some(h=>h.blocked)||!(hits.length===1&&!hits[0].half||hits.length===2&&hits.every(h=>h.half)))continue;
+  for(const h of hits.sort((a,b)=>b.si-a.si||b.start-a.start)){
+   let start=h.start;const prefix=r.steps[h.si].slice(0,start);const article=prefix.match(/\bthe\s+$/i);if(article)start-=article[0].length;
+   r.steps[h.si]=r.steps[h.si].slice(0,start)+'{{'+i.key+(h.half?'|0.5':'')+'}}'+r.steps[h.si].slice(h.end);
   }
-  return s.replace(/\uE002(\d+)\uE003/g,(_,n)=>held[n]);
- });return r;
+ }
+ return r;
 }
 function normalize(input,index=0){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('A recipe must be a JSON object.');
@@ -72,17 +106,38 @@ function normalize(input,index=0){
  linkAmounts(r);K.validate(r);return r;
 }
 function plain(text){
- const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);let title='',mode='',ings=[],steps=[],notes=[];let servings=4;
- for(const raw of lines){const l=raw.replace(/^#{1,6}\s*/,'').replace(/^\*\*(.+)\*\*:?$/,'$1');
-  if(/^(ingredients|what you need)\s*:$/i.test(l)||/^ingredients$/i.test(l)){mode='ingredients';continue;}
-  if(/^(instructions|directions|method|steps|how to make it)\s*:?$/i.test(l)){mode='steps';continue;}
-  if(/^(notes|tips)\s*:?$/i.test(l)){mode='notes';continue;}
-  const sv=l.match(/^(?:serves|servings|yield)\s*:?\s*(\d+)/i);if(sv){servings=Number(sv[1]);continue;}
+ const tidy=s=>s.trim().replace(/^#{1,6}\s*/,'').replace(/\*\*|__/g,'').replace(/^[\u{1F300}-\u{1FAFF}\u2600-\u27BF]\uFE0F?\s*/u,'');
+ const lines=text.split(/\r?\n/).map(tidy).filter(Boolean);let title='',mode='',ings=[],steps=[],notes=[],servings=4,minutes=0,category='Other',yieldUnit='servings',named='';let sawYield=false,table=null;
+ for(const l of lines){
+  if(/^[-_*]{3,}$/.test(l))continue;
+  if(/^(ingredients|what you(?:'|’)ll need|what you need)(?:\s*\([^)]*\))?\s*:?[\s]*$/i.test(l)){mode='ingredients';table=null;continue;}
+  if(/^(instructions|directions|method|steps|how to make(?: it)?|preparation)\s*:?$/i.test(l)){mode='steps';continue;}
+  if(/^(notes|tips|storage|substitutions|serving suggestions)\s*:?$/i.test(l)){mode='notes';notes.push(l);continue;}
+  const sv=l.match(/^(?:serves|servings|yield|makes)\s*:?\s*(\d+)\s*(.*)$/i);if(sv){servings=Number(sv[1]);yieldUnit=sv[2].replace(/[().]/g,'').trim()||'servings';sawYield=true;continue;}
+  const tm=l.match(/^(?:total time|time|cook(?:ing)? time)\s*:\s*(?:(\d+)\s*(?:hours?|hrs?)\s*)?(?:(\d+)\s*(?:minutes?|mins?))?$/i);if(tm&&(tm[1]||tm[2])){minutes=Number(tm[1]||0)*60+Number(tm[2]||0);continue;}
+  const cat=l.match(/^category\s*:\s*(Dinner|Breakfast|Desserts|Sides|Sauces|Other)$/i);if(cat){category=cat[1][0].toUpperCase()+cat[1].slice(1).toLowerCase();continue;}
+  const vn=l.match(/^(?:version|version name)\s*:\s*(.+)$/i);if(vn){named=vn[1];continue;}
   if(!title){title=l.replace(/^title:\s*/i,'');continue;}
-  if(mode==='ingredients')ings.push(l);else if(mode==='steps')steps.push(l.replace(/^(?:\d+[.)]|[-*•])\s*/,''));else notes.push(l);
+  if(mode==='ingredients'){
+   if(l.includes('|')){
+    const cells=l.replace(/^\||\|$/g,'').split('|').map(x=>x.trim());
+    if(cells.every(x=>/^:?-+:?$/.test(x)))continue;
+    if(cells.some(x=>/^ingredient$/i.test(x))){table=cells.map(x=>x.toLowerCase());continue;}
+    if(!table)throw Error('Ingredient table needs an Ingredient and Amount or Quantity header.');
+    const ni=table.indexOf('ingredient'),ai=table.findIndex(x=>/^(amount|quantity)$/.test(x)),ui=table.indexOf('unit');
+    if(ni<0||ai<0)throw Error('Ingredient table needs Ingredient and Amount or Quantity columns.');
+    ings.push([cells[ai],ui<0?'':cells[ui],cells[ni]].filter(Boolean).join(' '));continue;
+   }
+   if(/:$/.test(l)){notes.push(l);continue;}
+   ings.push(l);
+  }else if(mode==='steps')steps.push(l.replace(/^(?:step\s+)?\d+[.):]\s*|^[-*•]\s*/i,''));
+  else notes.push(l);
  }
- if(!ings.length||!steps.length)throw Error('Paste recipe JSON, or text with a title, Ingredients heading and Instructions heading. Nothing was imported.');
- return normalize({title,servings,ingredients:ings,steps,notes:notes.join('\n')});
+ if(!ings.length||!steps.length)throw Error('Paste one recipe with a title, Ingredients heading and Instructions heading. Nothing was imported.');
+ if(!sawYield)notes.push('Review needed: servings were not supplied; 4 is a placeholder. Set the correct yield before scaling.');
+ const r=normalize({title,servings,yieldUnit,minutes,category,ingredients:ings,steps,notes:notes.join('\n'),baseLabel:named||'Imported original'});
+ if(named)r.versionNote=named;
+ return r;
 }
 function parse(text){
  if(typeof text!=='string'||text.length>2000000)throw Error('Use recipe text under 2 MB.');text=text.trim();if(!text)throw Error('Paste a recipe first.');
@@ -90,14 +145,21 @@ function parse(text){
  let data;if(/^[\[{]/.test(text)){try{data=JSON.parse(text);}catch(_){throw Error('The JSON is incomplete. Copy the entire recipe block, including its closing brackets.');}}
  else return {recipes:[plain(text)],kind:'text'};
  if(['Our Table','SavorShelf'].includes(data.app)&&data.schema===1){const b=C.parseBackup(JSON.stringify(data));b.recipes.forEach(K.validate);return {recipes:b.recipes,kind:'backup'};}
- const rs=Array.isArray(data)?data:data.recipes||[data.recipe||data];if(!Array.isArray(rs)||rs.length<1||rs.length>500)throw Error('Import 1–500 recipes at a time.');
+ const rs=Array.isArray(data)?data:data.recipes||[data.recipe||data];if(!Array.isArray(rs)||rs.length<1||rs.length>2000)throw Error('Import 1–2,000 recipes at a time.');
  return {recipes:rs.map(normalize),kind:'recipe-pack'};
 }
 function merge(existing,incoming){
- // Normalized titles also identify conflicts. Distinct formulations remain inside history.
- const mapped=incoming.map(r=>{const old=existing.find(x=>x.id===r.id||(x.familyKey&&r.familyKey&&x.familyKey===r.familyKey))||existing.find(x=>K.norm(x.title)===K.norm(r.title));return old?{...r,id:old.id}:r;});
+ // Preserve first-match identity precedence while avoiding a collection scan per incoming card.
+ const ids=new Map(),families=new Map(),titles=new Map();
+ existing.forEach((recipe,index)=>{if(!ids.has(recipe.id))ids.set(recipe.id,index);if(recipe.familyKey&&!families.has(recipe.familyKey))families.set(recipe.familyKey,index);const title=K.norm(recipe.title);if(!titles.has(title))titles.set(title,index);});
+ const mapped=incoming.map(recipe=>{
+  const identity=Math.min(ids.get(recipe.id)??Infinity,recipe.familyKey?(families.get(recipe.familyKey)??Infinity):Infinity);
+  const index=Number.isFinite(identity)?identity:titles.get(K.norm(recipe.title));
+  return index===undefined?recipe:{...recipe,id:existing[index].id};
+ });
  return K.merge(existing,mapped);
 }
+
 function coverage(r){const used=new Set(r.steps.flatMap(s=>[...s.matchAll(/\{\{([\w-]+)/g)].map(m=>m[1])));return r.ingredients.filter(i=>!used.has(i.key)).map(i=>K.ingredientText(i));}
 function prompt(request,options={}){
  const q=cleanString(request,1800);if(!q)throw Error('Describe what you would like to cook first.');

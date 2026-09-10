@@ -63,7 +63,7 @@
   function parseBackup(text) {
     if(text.length>12000000)throw Error('The backup is too large (maximum 12 MB).');
     const data=JSON.parse(text);
-    if(!['Our Table','SavorShelf'].includes(data.app)||data.schema!==1||!Array.isArray(data.recipes)||data.recipes.length>500)throw Error('Choose a SavorShelf or Our Table version 1 backup.');
+    if(!['Our Table','SavorShelf'].includes(data.app)||data.schema!==1||!Array.isArray(data.recipes)||data.recipes.length>2000)throw Error('Choose a SavorShelf or Our Table version 1 backup.');
     data.recipes.forEach(validRecipe);
     const ids=data.recipes.map(r=>r.id);if(new Set(ids).size!==ids.length)throw Error('The backup contains duplicate recipe IDs.');
     return data;
@@ -73,7 +73,7 @@
     let added=0,conflicts=0;
     for(const item of incoming){const old=result.find(r=>r.id===item.id);if(!old){result.push(structuredClone(item));added++;}
       else if(JSON.stringify(old)!==JSON.stringify(item)){result.push({...structuredClone(item),id:'import-'+Date.now()+'-'+result.length,title:(item.title+' (imported copy)').slice(0,160)});conflicts++;}}
-    if(result.length>500)throw Error('This import would exceed 500 recipes. Export and split your collection first.');
+    if(result.length>2000)throw Error('This import would exceed 2,000 recipes. Export and split your collection first.');
     return {recipes:result,added,conflicts};
   }
   const api={quantity,fmt,unit,scaled,shopping,validRecipe,parseBackup,mergeRecipes};

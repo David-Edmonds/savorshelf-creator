@@ -21,7 +21,7 @@ class Session{
  request(request,preferences='',revision=false){
   if(!request.trim()||request.length>7000||preferences.length>1200)throw Error('Enter a request within the displayed limits.');
   if(revision&&!this.draft)throw Error('Generate a draft first.');
-  const format='Return one complete JSON recipe with numeric servings, unique ingredient keys, amounts, units, names, substitutions, measured {{key}} steps, both temperature units and notes. No HTML, unsupported safety claims or invented provenance.';
+  const format='Return ONLY one JSON object with title:string, servings:number, minutes:number, ingredients:array of {key,amount,unit,name,substitution}, steps:array of strings, and notes:string. ingredients MUST be an array. Use numeric servings, unique ingredient keys, amounts, units, names, substitutions, measured {{key}} steps, both temperature units and notes. No HTML, unsupported safety claims or invented provenance.';
   return [{role:'system',content:format},...(revision?[{role:'assistant',content:JSON.stringify(this.draft)}]:[]),{role:'user',content:request+'\nVisible household preferences for this request: '+(preferences.trim()||'None') }];
  }
  accept(r,messages,revision){

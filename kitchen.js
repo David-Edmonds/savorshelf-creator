@@ -53,8 +53,13 @@ function fingerprint(r){return JSON.stringify({title:norm(r.title),ingredients:r
 function versionSignature(r){return JSON.stringify([r.title,r.servings,r.ingredients,r.steps,r.notes||'',r.adaptations||{},r.variants||[]]);}
 function merge(existing,incoming){
  const recipes=clone(existing);let added=0,conflicts=0,skipped=0;
- for(const r of incoming){validate(r);const old=recipes.find(x=>x.id===r.id||(x.familyKey&&r.familyKey&&x.familyKey===r.familyKey)||fingerprint(x)===fingerprint(r));
-  if(!old){recipes.push(clone(r));added++;continue;}
+ // Index immutable active formulations once. Metadata/history changes below do not
+ // change a fingerprint. Minimum index preserves the original first-match rule.
+ const ids=new Map(),families=new Map(),prints=new Map();
+ function index(r,n){if(!ids.has(r.id))ids.set(r.id,n);if(r.familyKey&&!families.has(r.familyKey))families.set(r.familyKey,n);const fp=fingerprint(r);if(!prints.has(fp))prints.set(fp,n);}
+ recipes.forEach(index);
+ for(const r of incoming){validate(r);const positions=[ids.get(r.id),r.familyKey?families.get(r.familyKey):undefined,prints.get(fingerprint(r))].filter(n=>n!==undefined);const old=positions.length?recipes[Math.min(...positions)]:undefined;
+  if(!old){const copy=clone(r);index(copy,recipes.length);recipes.push(copy);added++;continue;}
   // Cosmetic names follow the matching formulation, not merely its shared recipe ID.
   const same=versionSignature(old)===versionSignature(r);
   old.versionNames={...(same?(r.versionNames||{}):{}),...(old.versionNames||{})};
@@ -76,7 +81,7 @@ function merge(existing,incoming){
   old.history=[...additions,...(old.history||[])];conflicts+=additions.length;
   old.rating=Math.max(old.rating||0,r.rating||0);old.favorite=!!old.favorite||!!r.favorite;old.pinned=!!old.pinned||!!r.pinned;
  }
- if(recipes.length>500)throw Error('The collection limit is 500 recipes.');return {recipes,added,conflicts,skipped};
+ if(recipes.length>2000)throw Error('The collection limit is 2,000 recipes.');return {recipes,added,conflicts,skipped};
 }
 const api={norm,dual,ingredientText,steps,resolve,variants,validate,fingerprint,merge};if(typeof module!=='undefined')module.exports=api;else root.Kitchen=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
