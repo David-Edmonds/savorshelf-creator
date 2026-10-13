@@ -144,7 +144,7 @@ function parse(text){
  const block=text.match(/```(?:json)?\s*([\s\S]*?)```/i);if(block)text=block[1].trim();
  let data;if(/^[\[{]/.test(text)){try{data=JSON.parse(text);}catch(_){throw Error('The JSON is incomplete. Copy the entire recipe block, including its closing brackets.');}}
  else return {recipes:[plain(text)],kind:'text'};
- if(['Our Table','SavorShelf'].includes(data.app)&&data.schema===1){const b=C.parseBackup(JSON.stringify(data));b.recipes.forEach(K.validate);return {recipes:b.recipes,kind:'backup'};}
+ if(['Our Table','SavorShelf','Leggacy'].includes(data.app)&&data.schema===1){const b=C.parseBackup(JSON.stringify(data));b.recipes.forEach(K.validate);return {recipes:b.recipes,kind:'backup'};}
  const rs=Array.isArray(data)?data:data.recipes||[data.recipe||data];if(!Array.isArray(rs)||rs.length<1||rs.length>2000)throw Error('Import 1–2,000 recipes at a time.');
  return {recipes:rs.map(normalize),kind:'recipe-pack'};
 }
@@ -171,7 +171,7 @@ function prompt(request,options={}){
  else if(/dairy[ -]?free|no dairy/.test(lower))options.dairy='dairyFree';
  if(/no[ -]?added[ -]?sugar/.test(lower))options.sugar='noAddedSugar';
  else if(/sugar[ -]?free|zero sugar/.test(lower))options.sugar='sugarFree';
- return 'Create a complete, practical recipe for SavorShelf. Request: '+q+'\nServings: '+(options.servings||4)+'. Dairy: '+(options.dairy||'regular')+'. Sweetness: '+(options.sugar||'original')+'. Exclusions: '+(options.avoid||'none specified')+'.\nReturn ONLY a JSON object with title, category, servings (number), minutes (number), ingredients (array of {key, amount:number or null, unit, name, substitution}), steps (array of strings), and notes. Use unique simple ingredient keys. In the steps repeat measured amounts using {{key}}; a divided amount uses {{key|0.5}}. Include both °F and °C for all temperatures and exact quantities for substitutions. Respect exclusions. No added sugar is not sugar-free; never claim verified zero sugar or medical suitability. Give appropriate food thermometer checks and call new recipes untested drafts. Do not invent that this is one of my previous recipes. The app will preview the JSON before I save it.';
+ return 'Create a complete, practical recipe for Leggacy. Request: '+q+'\nServings: '+(options.servings||4)+'. Dairy: '+(options.dairy||'regular')+'. Sweetness: '+(options.sugar||'original')+'. Exclusions: '+(options.avoid||'none specified')+'.\nReturn ONLY a JSON object with title, category, servings (number), minutes (number), ingredients (array of {key, amount:number or null, unit, name, substitution}), steps (array of strings), and notes. Use unique simple ingredient keys. In the steps repeat measured amounts using {{key}}; a divided amount uses {{key|0.5}}. Include both °F and °C for all temperatures and exact quantities for substitutions. Respect exclusions. No added sugar is not sugar-free; never claim verified zero sugar or medical suitability. Give appropriate food thermometer checks and call new recipes untested drafts. Do not invent that this is one of my previous recipes. The app will preview the JSON before I save it.';
 }
 const api={signature,shortHash,migrate,ingredientLine,linkAmounts,normalize,parse,merge,coverage,prompt};if(typeof module!=='undefined')module.exports=api;else root.RecipeTransfer=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

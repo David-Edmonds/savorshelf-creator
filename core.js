@@ -1,4 +1,4 @@
-/* SavorShelf: pure, dependency-free recipe and backup helpers. */
+/* Leggacy: pure, dependency-free recipe and backup helpers. */
 (function(root) {
   'use strict';
   const unicode = {'½':'1/2','¼':'1/4','¾':'3/4','⅓':'1/3','⅔':'2/3','⅛':'1/8','⅜':'3/8','⅝':'5/8','⅞':'7/8','⅙':'1/6','⅚':'5/6'};
@@ -63,7 +63,7 @@
   function parseBackup(text) {
     if(text.length>12000000)throw Error('The backup is too large (maximum 12 MB).');
     const data=JSON.parse(text);
-    if(!['Our Table','SavorShelf'].includes(data.app)||data.schema!==1||!Array.isArray(data.recipes)||data.recipes.length>2000)throw Error('Choose a SavorShelf or Our Table version 1 backup.');
+    if(!['Our Table','SavorShelf','Leggacy'].includes(data.app)||data.schema!==1||!Array.isArray(data.recipes)||data.recipes.length>2000)throw Error('Choose a Leggacy or Our Table version 1 backup.');
     data.recipes.forEach(validRecipe);
     const ids=data.recipes.map(r=>r.id);if(new Set(ids).size!==ids.length)throw Error('The backup contains duplicate recipe IDs.');
     return data;

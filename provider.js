@@ -1,4 +1,4 @@
-/* Replace this adapter to change providers; recipe state belongs to SavorShelf. */
+/* Replace this adapter to change providers; recipe state belongs to Leggacy. */
 'use strict';
 window.SavorShelfProvider = {
  name: 'Puter',
