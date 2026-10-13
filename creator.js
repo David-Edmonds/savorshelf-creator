@@ -41,7 +41,7 @@ $('connect').addEventListener('click',()=>{
 });
 $('sign-in').addEventListener('click',async()=>{
  if(!loaded||!$('consent').checked||busy)return;
- busy=true;update();try{const result=await SavorShelfProvider.signIn();if(result?.success===false)throw Error('Sign-in was not completed.');signed=true;status('Signed in. Review your request, then press Generate. Your Puter usage allowance applies.');}catch(e){signed=false;status(messageOf(e),true);}finally{busy=false;update();}
+ busy=true;update();try{const result=await LeggacyProvider.signIn();if(result?.success===false)throw Error('Sign-in was not completed.');signed=true;status('Signed in. Review your request, then press Generate. Your Puter usage allowance applies.');}catch(e){signed=false;status(messageOf(e),true);}finally{busy=false;update();}
 });
 async function generate(revision=false){
  if(!loaded||!signed||!$('consent').checked||busy)return;
@@ -50,12 +50,12 @@ async function generate(revision=false){
  const ticket=++operation;busy=true;canCancel=true;update();status('Creating your recipe. This request uses your Puter allowance.');
  const timer=setTimeout(()=>{if(ticket===operation)cancel('Timed out locally.');},90000);
  try{
-  const response=await SavorShelfProvider.generate(messages,$('model').value);
+  const response=await LeggacyProvider.generate(messages,$('model').value);
   if(ticket!==operation)return;
   if(recipe)session.draft=RecipeVersions.renamed(recipe,{original:$('version-name').value});
   recipe=session.accept(responseRecipe(response),messages,revision);
   $('version-name').value=revision?($('revision').value.trim().slice(0,160)||'Revised version'):'Original draft';
-  preview(recipe);status('Draft ready. Review it and name this version before sending it to SavorShelf.');
+  preview(recipe);status('Draft ready. Review it and name this version before sending it to Leggacy.');
  }catch(e){if(ticket===operation)status(messageOf(e)+' Your last valid draft is retained. No automatic retry was made.',true);}
  finally{clearTimeout(timer);if(ticket===operation){busy=false;canCancel=false;update();}}
 }
@@ -67,7 +67,7 @@ $('revise').addEventListener('click',()=>generate(true));
 $('cancel').addEventListener('click',()=>cancel());
 $('discard').addEventListener('click',()=>{recipe=session.discard();$('version-name').value=recipe.versionNames?.original||'Original draft';preview(recipe);update();status('Restored the previous draft. Nothing was sent to the app.');});
 $('load-base').addEventListener('click',()=>{try{const parsed=RecipeTransfer.parse($('base-recipe').value);if(parsed.recipes.length!==1)throw Error('Paste exactly one recipe to revise.');recipe=parsed.recipes[0];session.draft=recipe;session.previous=null;$('version-name').value=recipe.versionNames?.original||'Saved version';preview(recipe);update();status('Recipe loaded locally. Review it, then request a change. Its identity will be preserved.');}catch(e){status(messageOf(e),true);}});
-$('share').addEventListener('click',async()=>{try{if(!navigator.share)throw Error('Sharing is unavailable in this browser. Use Copy recipe or Save recipe file instead.');await navigator.share({title:recipe.title,text:payload()});status('Shared. Choose SavorShelf and review the import before saving.');}catch(e){if(e.name!=='AbortError')status(messageOf(e),true);}});
-$('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(payload());status('Copied. In SavorShelf, open Create → Bring back a recipe, paste, review and save.');}catch(e){status('Clipboard access failed. Use Save recipe file instead.',true);}});
-$('download').addEventListener('click',()=>{try{const url=URL.createObjectURL(new Blob([payload()],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='SavorShelf-created-recipe.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);status('Recipe file prepared. Import it into SavorShelf and review before saving.');}catch(e){status(messageOf(e),true);}});
+$('share').addEventListener('click',async()=>{try{if(!navigator.share)throw Error('Sharing is unavailable in this browser. Use Copy recipe or Save recipe file instead.');await navigator.share({title:recipe.title,text:payload()});status('Shared. Choose Leggacy and review the import before saving.');}catch(e){if(e.name!=='AbortError')status(messageOf(e),true);}});
+$('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(payload());status('Copied. In Leggacy, open Create → Bring back a recipe, paste, review and save.');}catch(e){status('Clipboard access failed. Use Save recipe file instead.',true);}});
+$('download').addEventListener('click',()=>{try{const url=URL.createObjectURL(new Blob([payload()],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='Leggacy-created-recipe.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);status('Recipe file prepared. Import it into Leggacy and review before saving.');}catch(e){status(messageOf(e),true);}});
 window.SavorShelfCreator={responseRecipe};update();
